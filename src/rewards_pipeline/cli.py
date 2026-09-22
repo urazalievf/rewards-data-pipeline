@@ -14,6 +14,7 @@ from datetime import date, timedelta
 
 from .config import load_config
 from .jobs import bronze_ingest, generate_seed, gold_marts, silver_transform
+from .migrations import MigrationError
 from .quality import DataQualityError
 from .session import configure_logging, get_logger, spark_session
 
@@ -70,6 +71,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("config", help="print the resolved configuration for RP_ENV (no Spark needed)")
 
+    migrate_parser = sub.add_parser(
+        "migrate", help="apply pending DDL migrations from ddl/ to the catalog"
+    )
+    migrate_parser.add_argument("--dry-run", action="store_true", help="show what would be applied")
+    migrate_parser.add_argument(
+        "--repair-only",
+        action="store_true",
+        help="skip migrations, just re-discover partitions for registered tables",
+    )
+
     preview_parser = sub.add_parser("preview", help="print the gold marts")
     preview_parser.add_argument("--limit", type=int, default=10)
 
@@ -113,6 +124,29 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
 
+        if args.command == "migrate":
+            from . import migrations
+
+            with spark_session(config, "migrate") as spark:
+                if args.repair_only:
+                    print(json.dumps({"repaired": migrations.repair(spark, config)}, indent=2))
+                    return 0
+                result = migrations.migrate(spark, config, dry_run=args.dry_run)
+                if not args.dry_run and result:
+                    migrations.repair(spark, config)
+                print(
+                    json.dumps(
+                        {
+                            "env": config.env,
+                            "database": config.catalog.get("database"),
+                            "pending" if args.dry_run else "applied": result,
+                        },
+                        indent=2,
+                        default=str,
+                    )
+                )
+            return 0
+
         if args.command == "preview":
             _preview(config, args.limit)
             return 0
@@ -149,6 +183,11 @@ def main(argv: list[str] | None = None) -> int:
         summary = STAGES[args.command](logical_date, config)
         print(json.dumps(summary, indent=2, default=str))
         return 0
+
+    except MigrationError as exc:
+        # Schema history problems are operator errors, not data problems.
+        log.error("migration failed: %s", exc)
+        return 3
 
     except DataQualityError as exc:
         # A contract breach is an expected failure mode, not a crash: exit 2 so

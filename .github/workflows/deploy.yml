@@ -80,6 +80,20 @@ jobs:
       - name: Gate on the test suite
         run: pytest -q
 
+      - name: Show pending schema migrations
+        # Always visible in the log, so an approver reviewing a prod promotion
+        # can see exactly which DDL is about to be applied.
+        run: rewards migrate --dry-run
+
+      - name: Apply schema migrations
+        # DDL first: the pipeline must never write into a table whose
+        # definition has not been deployed yet.
+        if: ${{ inputs.run_pipeline }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: rewards migrate
+
       - name: Submit the pipeline
         # The integration point with real infrastructure. Credentials come from
         # the GitHub Environment's secrets, so uat and prod cannot borrow each
@@ -97,6 +111,9 @@ jobs:
             exit 0
           fi
           rewards run-all
+          # External tables do not learn about partitions written after the
+          # table was created.
+          rewards migrate --repair-only
 
       - name: Upload data-quality reports
         if: always()

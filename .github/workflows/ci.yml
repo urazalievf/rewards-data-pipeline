@@ -111,6 +111,14 @@ jobs:
       - name: Seed, run every layer and check the quality gate
         run: rewards run-all --seed
 
+      - name: Apply DDL migrations and check they are idempotent
+        run: |
+          rewards migrate
+          # A second run must find nothing pending, or the migration is not
+          # idempotent and would fight itself on every deploy.
+          test -z "$(rewards migrate --dry-run | grep -o '\"version\"')" \
+            || (echo "migrations are not idempotent" && exit 1)
+
       - name: Show the marts
         run: rewards preview --limit 5
 

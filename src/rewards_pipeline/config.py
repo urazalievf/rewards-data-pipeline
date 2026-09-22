@@ -51,6 +51,7 @@ class Config:
     sources: dict[str, Any]
     layers: dict[str, Any]
     quality: dict[str, Any]
+    catalog: dict[str, Any] = field(default_factory=dict)
     env: str = "local"
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
 
@@ -159,6 +160,7 @@ def load_config(config_path: str | os.PathLike[str] | None = None) -> Config:
         sources=raw.get("sources", {}),
         layers=raw.get("layers", {}),
         quality=raw.get("quality", {}),
+        catalog=raw.get("catalog", {"enabled": False, "database": "rewards"}),
         env=env,
         raw=raw,
     )

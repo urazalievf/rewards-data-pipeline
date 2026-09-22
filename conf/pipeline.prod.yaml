@@ -22,3 +22,7 @@ spark:
 quality:
   on_breach_default: fail
   quarantine_path: _quarantine
+
+catalog:
+  enabled: true
+  database: rewards_prod

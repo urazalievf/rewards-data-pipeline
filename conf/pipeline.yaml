@@ -29,6 +29,13 @@ seed:
   days: 14
   random_seed: 20260922
 
+catalog:
+  # Table definitions are deployed from ddl/ rather than implied by whatever
+  # the last write produced. Locally this persists in a Derby metastore; in a
+  # real environment point Spark at Glue, Unity or Hive instead.
+  enabled: true
+  database: rewards
+
 sources:
   transactions:
     format: json

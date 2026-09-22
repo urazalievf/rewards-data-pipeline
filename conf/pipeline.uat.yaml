@@ -25,3 +25,7 @@ quality:
   # UAT is where a contract breach should be loud, before prod ever sees it.
   on_breach_default: fail
   quarantine_path: _quarantine
+
+catalog:
+  enabled: true
+  database: rewards_uat

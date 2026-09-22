@@ -67,6 +67,12 @@ run: ## seed + bronze + silver + gold, end to end
 backfill: ## seed + ingest DAYS of history (default 14) + rebuild silver and gold
 	$(BIN)/rewards backfill --days $(DAYS) --seed
 
+migrate: ## apply pending DDL migrations from ddl/ to the catalog
+	$(BIN)/rewards migrate
+
+migrate-dry-run: ## show which DDL migrations are pending
+	$(BIN)/rewards migrate --dry-run
+
 preview: ## print the gold marts
 	$(BIN)/rewards preview --limit 15
 
@@ -104,6 +110,9 @@ docker-run: ## run the whole pipeline inside the container
 docker-backfill: ## backfill DAYS of history inside the container
 	$(COMPOSE) run --rm pipeline backfill --days $(DAYS) --seed
 
+docker-migrate: ## apply pending DDL migrations inside the container
+	$(COMPOSE) run --rm pipeline migrate
+
 docker-preview: ## print the gold marts from inside the container
 	$(COMPOSE) run --rm pipeline preview --limit 15
 
@@ -127,11 +136,13 @@ down: ## stop every container and remove volumes
 ## --- housekeeping --------------------------------------------------------
 
 clean: ## remove generated data and caches
-	rm -rf data/landing/* data/warehouse/* spark-warehouse metastore_db derby.log
+	rm -rf data/landing/* data/warehouse/* data/reports/* spark-warehouse metastore_db derby.log
 	find . -name __pycache__ -type d -prune -exec rm -rf {} +
 	rm -rf .pytest_cache .ruff_cache .mypy_cache
 	@touch data/landing/.gitkeep data/warehouse/.gitkeep
 
-.PHONY: help venv doctor seed bronze silver gold run backfill preview quality test test-fast \
-	lint format docker-build docker-run docker-backfill docker-preview docker-test docker-shell \
+.PHONY: help venv doctor seed bronze silver gold run backfill migrate migrate-dry-run \
+	preview quality test test-fast \
+	lint format docker-build docker-run docker-backfill docker-migrate docker-preview \
+	docker-test docker-shell \
 	cluster-up airflow-up down clean

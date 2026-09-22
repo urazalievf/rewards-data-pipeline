@@ -59,6 +59,11 @@ def build_session(config: Config, app_suffix: str = "") -> SparkSession:
     for key, value in (config.spark.get("configs") or {}).items():
         builder = builder.config(key, str(value))
 
+    if config.catalog.get("enabled"):
+        # A persistent catalog is what makes deployed DDL meaningful: without
+        # it, CREATE TABLE lives and dies with the session.
+        builder = builder.enableHiveSupport()
+
     session = builder.getOrCreate()
     session.sparkContext.setLogLevel(os.getenv("SPARK_LOG_LEVEL", "WARN"))
     return session

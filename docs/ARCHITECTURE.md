@@ -64,6 +64,13 @@ so a malformed row is captured rather than dropped.
 `.sql` file an analyst can open. Python handles configuration, ordering,
 persistence and the quality gate — the parts SQL is bad at.
 
+**Table definitions are deployed, not implied.** `ddl/` holds numbered
+migrations applied by `rewards migrate`, with a checksummed ledger in the
+warehouse. Without this the schema is a side effect of the last write, and a
+renamed column is a silent break for every consumer. The trade-off with bare
+Parquet is that the catalog cannot enforce agreement between DDL and writer —
+they have to change in the same PR.
+
 **Quality gates between layers, not after.** Expectations run against what was
 actually persisted, before the next layer reads it. A `fail` breach raises
 `DataQualityError`, which the CLI turns into exit code 2 so an orchestrator can
@@ -84,7 +91,11 @@ object store. The same code runs on a laptop and on a cluster.
 Honest list of what this showcase leaves out:
 
 - **Delta Lake or Iceberg** instead of bare Parquet — ACID commits, time
-  travel, `MERGE` for true incremental silver, and schema evolution.
+  travel, `MERGE` for true incremental silver, and schema evolution enforced
+  by the table format. The `ddl/` migrations would shrink rather than
+  disappear: `ALTER TABLE` still ships as a numbered file, but the format
+  would reject a write that contradicts the declared schema instead of
+  letting the catalog drift.
 - **A real catalog** (Glue, Unity, Hive) so tables are discoverable rather
   than path-addressed.
 - **Streaming ingest** for transactions, with the batch layer reduced to

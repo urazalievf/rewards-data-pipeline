@@ -62,7 +62,8 @@ make backfill          # or: make backfill DAYS=30
 | **Idempotency** | Dynamic partition overwrite; re-running a date reproduces the same output |
 | **Orchestration** | Airflow DAG with TaskGroups, retries with exponential backoff, backfill support |
 | **Testing** | 38 tests covering the quality engine, the SQL transforms and the seed data |
-| **CI** | Lint, type-check, unit tests and a full end-to-end run on generated data |
+| **Schema management** | Versioned DDL migrations with a checksummed, warehouse-side ledger |
+| **CI** | Lint, type-check, unit tests, a full end-to-end run and a migration idempotency gate |
 
 ---
 
@@ -166,6 +167,47 @@ joining never goes through `pathlib`, which would silently collapse `s3a://`
 into `s3a:/`, and existence checks go through Hadoop's `FileSystem` API so
 they answer correctly for local disk and object storage alike.
 
+## Schema is deployed, not implied
+
+Writing Parquet with `mode("overwrite")` means the schema is whatever the last
+write produced — downstream consumers have no contract, and renaming a column
+breaks them silently. So table definitions live in `ddl/` as numbered
+migrations and are deployed through CI/CD:
+
+```
+ddl/
+  V001__create_gold_marts.sql          CREATE DATABASE + the four marts
+  V002__expose_silver_to_analysts.sql  the SCD2 dimension and silver facts
+```
+
+```bash
+make migrate-dry-run   # what is pending
+make migrate           # apply, then recover partitions
+```
+
+`{database}` and `{warehouse}` are substituted at apply time, so one file
+targets local, uat and prod.
+
+**Changing a column** means writing `V003__rename_spend_usd.sql` with the
+`ALTER TABLE` and changing the SQL that produces it *in the same PR* — the
+migration is the coordination point that makes the two land together.
+
+The runner follows the Flyway model, with the details that matter:
+
+- the ledger lives in the **warehouse** (`_migrations`), not on the runner, so
+  it is shared by everyone pointed at that environment;
+- every file is checksummed — editing a migration that has already been
+  applied is rejected, rather than silently skipped, so you add a new one;
+- applying is idempotent, and CI asserts that by running `migrate` twice and
+  failing if the second run still finds work;
+- statement splitting is quote-aware, so `COMMENT 'SCD2; filter is_current'`
+  is not torn into two invalid fragments.
+
+> With bare Parquet, DDL and writer must change together — the catalog cannot
+> enforce it. This is exactly the problem Delta Lake and Iceberg solve, where
+> the table format enforces the schema on write. The migration pattern here
+> carries over to either; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 ## Orchestration
 
 The Airflow DAG ([`dags/rewards_medallion.py`](dags/rewards_medallion.py)) runs
@@ -189,6 +231,7 @@ make airflow-up    # http://localhost:8080  (admin / admin)
 ```
 conf/           pipeline.yaml + per-environment overlays, and expectations.yaml (the DQ contract)
 dags/           Airflow DAG
+ddl/            Versioned CREATE/ALTER TABLE migrations, applied by `rewards migrate`
 scripts/        find-jdk.sh, used by the Makefile to locate a Spark-compatible JDK
 docker/         Pinned JDK 17 images for the pipeline and for Airflow
 src/rewards_pipeline/
