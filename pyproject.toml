@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rewards-data-pipeline"
+version = "0.1.0"
+description = "Medallion-architecture batch pipeline turning raw card transactions into rewards-ROI marts"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pyspark==3.5.1",
+    "PyYAML==6.0.2",
+    "python-dateutil==2.9.0.post0",
+]
+
+[project.scripts]
+rewards = "rewards_pipeline.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+rewards_pipeline = ["sql/**/*.sql"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = ["slow: spark-backed tests that take a few seconds"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+warn_unused_ignores = true

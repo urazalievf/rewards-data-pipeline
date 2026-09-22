@@ -1,0 +1,111 @@
+# Default path (no profile) is a single container that runs the pipeline:
+#     docker compose run --rm pipeline run-all --seed
+#
+# Optional profiles:
+#     --profile cluster   standalone Spark master + worker
+#     --profile airflow   Airflow with the DAG installed (and paused)
+
+name: rewards-data-pipeline
+
+x-pipeline-env: &pipeline-env
+  RP_ENV: docker
+  RP_LANDING_PATH: /opt/pipeline/data/landing
+  RP_WAREHOUSE_PATH: /opt/pipeline/data/warehouse
+  RP_LOG_LEVEL: INFO
+  SPARK_LOG_LEVEL: WARN
+  PYTHONPATH: /opt/pipeline/src
+
+services:
+  pipeline:
+    build:
+      context: .
+      dockerfile: docker/pipeline.Dockerfile
+    image: rewards-data-pipeline:local
+    environment:
+      <<: *pipeline-env
+      # Unset by default: Spark runs in-process. Point this at the cluster
+      # profile to run the same jobs against real executors.
+      SPARK_MASTER_URL: ${SPARK_MASTER_URL:-}
+    volumes:
+      - ./data:/opt/pipeline/data
+      - ./conf:/opt/pipeline/conf
+      - ./src:/opt/pipeline/src
+    working_dir: /opt/pipeline
+
+  spark-master:
+    profiles: [cluster]
+    image: bitnami/spark:3.5.1
+    environment:
+      SPARK_MODE: master
+      SPARK_RPC_AUTHENTICATION_ENABLED: "no"
+      SPARK_SSL_ENABLED: "no"
+    ports:
+      - "8081:8080"   # Spark master UI
+      - "7077:7077"
+    volumes:
+      - ./data:/opt/pipeline/data
+
+  spark-worker:
+    profiles: [cluster]
+    image: bitnami/spark:3.5.1
+    depends_on: [spark-master]
+    environment:
+      SPARK_MODE: worker
+      SPARK_MASTER_URL: spark://spark-master:7077
+      SPARK_WORKER_CORES: 2
+      SPARK_WORKER_MEMORY: 2G
+      SPARK_RPC_AUTHENTICATION_ENABLED: "no"
+      SPARK_SSL_ENABLED: "no"
+    volumes:
+      - ./data:/opt/pipeline/data
+    deploy:
+      replicas: 2
+
+  postgres:
+    profiles: [airflow]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+
+  airflow:
+    profiles: [airflow]
+    build:
+      context: .
+      dockerfile: docker/airflow.Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *pipeline-env
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      # Belt and braces: the DAG also sets is_paused_upon_creation=True.
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/pipeline/dags
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+      _AIRFLOW_DB_MIGRATE: "true"
+      _AIRFLOW_WWW_USER_CREATE: "true"
+      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USER:-admin}
+      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin}
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./dags:/opt/pipeline/dags
+      - ./src:/opt/pipeline/src
+      - ./conf:/opt/pipeline/conf
+      - ./data:/opt/pipeline/data
+      - airflow-logs:/opt/airflow/logs
+    command: standalone
+
+volumes:
+  airflow-db:
+  airflow-logs:
