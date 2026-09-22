@@ -1,0 +1,75 @@
+# Single source of truth for paths, run parameters and layer layout.
+# Overlaid by conf/pipeline.<RP_ENV>.yaml, then by RP_* environment
+# variables (see config.py). Environments are configuration, not branches.
+
+app_name: rewards-data-pipeline
+
+paths:
+  landing: data/landing
+  warehouse: data/warehouse
+  # `reports` (quality reports, run manifests) defaults to the warehouse when
+  # that is local, and must be set explicitly when it is not.
+
+spark:
+  shuffle_partitions: 8
+  # Local runs stay deterministic and small; the cluster profile is set via
+  # SPARK_* env vars so the same code runs unchanged on a real cluster.
+  configs:
+    spark.sql.session.timeZone: UTC
+    spark.sql.sources.partitionOverwriteMode: dynamic
+    spark.sql.adaptive.enabled: "true"
+    spark.sql.parquet.compression.codec: snappy
+
+seed:
+  members: 400
+  cards: 12
+  merchants: 150
+  reward_rules: 40
+  transactions_per_day: 2500
+  days: 14
+  random_seed: 20260922
+
+catalog:
+  # Table definitions are deployed from ddl/ rather than implied by whatever
+  # the last write produced. Locally this persists in a Derby metastore; in a
+  # real environment point Spark at Glue, Unity or Hive instead.
+  enabled: true
+  database: rewards
+
+sources:
+  transactions:
+    format: json
+    path: transactions
+    partition_by_ingest_date: true
+  cards:
+    format: csv
+    path: cards
+  merchants:
+    format: csv
+    path: merchants
+  reward_rules:
+    format: json
+    path: reward_rules
+  fx_rates:
+    format: csv
+    path: fx_rates
+
+layers:
+  bronze:
+    path: bronze
+    tables: [transactions, cards, merchants, reward_rules, fx_rates]
+  silver:
+    path: silver
+    tables: [transactions, cards, merchants, reward_rules, fx_rates]
+  gold:
+    path: gold
+    tables:
+      - transaction_rewards
+      - card_roi_monthly
+      - merchant_category_spend
+      - member_rewards_summary
+
+quality:
+  # `fail` aborts the run, `warn` records the breach and continues.
+  on_breach_default: fail
+  quarantine_path: _quarantine

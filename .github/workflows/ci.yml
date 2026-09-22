@@ -1,0 +1,136 @@
+# Continuous integration: lint, type-check, unit tests and a full end-to-end
+# pipeline run against generated data.
+#
+# TRIGGERS ARE OFF ON PURPOSE.
+# This workflow only runs when started by hand from the Actions tab. To let it
+# run automatically, uncomment the push / pull_request / schedule blocks below.
+name: ci
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_end_to_end:
+        description: "Also run the full bronze -> silver -> gold pipeline"
+        type: boolean
+        default: true
+
+  # push:
+  #   branches: [main]
+  # pull_request:
+  #   branches: [main]
+  # schedule:
+  #   - cron: "0 6 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+  JAVA_VERSION: "17"
+
+jobs:
+  static-checks:
+    name: lint & types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          pip install -e .
+
+      - name: Ruff
+        run: ruff check src tests dags
+
+      - name: Ruff format check
+        run: ruff format --check src tests dags
+
+      - name: Mypy
+        run: mypy src
+
+  tests:
+    name: unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          pip install -e .
+
+      - name: Run tests
+        run: pytest --cov=rewards_pipeline --cov-report=term-missing
+
+  end-to-end:
+    name: end-to-end run
+    runs-on: ubuntu-latest
+    needs: [static-checks, tests]
+    if: ${{ inputs.run_end_to_end }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Seed, run every layer and check the quality gate
+        run: rewards run-all --seed
+
+      - name: Check the tables match their declared contracts
+        # Fails if the pipeline wrote a column the contract does not declare,
+        # or renamed one. This is what the catalog cannot enforce for Parquet.
+        run: rewards schema check
+
+      - name: Apply DDL migrations and check they are idempotent
+        run: |
+          rewards migrate
+          # A second run must find nothing pending, or the migration is not
+          # idempotent and would fight itself on every deploy.
+          test -z "$(rewards migrate --dry-run | grep -o '\"version\"')" \
+            || (echo "migrations are not idempotent" && exit 1)
+
+      - name: Show the marts
+        run: rewards preview --limit 5
+
+      - name: Upload data-quality reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-quality-reports
+          path: data/warehouse/_quality/
+          if-no-files-found: warn

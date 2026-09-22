@@ -1,0 +1,35 @@
+table: transaction_rewards
+layer: gold
+owner: data-engineering
+description: >-
+  Points earned per settled transaction, after joining the card version in
+  force on the transaction date and applying monthly bonus caps.
+grain: [txn_id]
+partitioned_by: [month]
+
+columns:
+  - {name: txn_id, type: string, nullable: false, description: "Source transaction identifier"}
+  - {name: member_id, type: string, nullable: false, pii: true}
+  - {name: card_id, type: string, nullable: false}
+  - {name: card_sk, type: string, description: "Surrogate key of the SCD2 card version applied"}
+  - {name: product_name, type: string}
+  - {name: issuer, type: string}
+  - {name: network, type: string}
+  - {name: merchant_id, type: string}
+  - {name: merchant_name, type: string}
+  - {name: category, type: string, description: "Merchant category driving rule matching"}
+  - {name: mcc, type: string, description: "Four-digit merchant category code"}
+  - {name: country, type: string}
+  - {name: channel, type: string}
+  - {name: txn_ts, type: timestamp, description: "Transaction time, UTC"}
+  - {name: txn_date, type: date}
+  - {name: amount_usd, type: double, description: "Amount converted at the transaction-date FX rate"}
+  - {name: rule_id, type: string, description: "Winning earn rule, or BASE_EARN when none matched"}
+  - {name: base_earn_rate, type: double}
+  - {name: applied_multiplier, type: double, description: "Multiplier actually applied"}
+  - {name: bonus_eligible_usd, type: double, description: "Portion of the amount still under the monthly cap"}
+  - {name: points_earned, type: double}
+  - {name: point_value_cents, type: double}
+  - {name: reward_value_usd, type: double}
+  - {name: annual_fee_usd, type: double}
+  - {name: month, type: string, nullable: false, description: "Partition column, yyyy-MM"}

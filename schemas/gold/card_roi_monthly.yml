@@ -1,0 +1,35 @@
+# Declared contract for gold.card_roi_monthly.
+#
+# This file is the source of truth for the table's shape. `rewards schema
+# check` compares it against what the pipeline actually wrote and fails on
+# drift, which is what stops a renamed column reaching consumers silently.
+table: card_roi_monthly
+layer: gold
+owner: data-engineering
+description: >-
+  Per member, card and month: spend, rewards earned, the amortised annual fee
+  and the resulting net value. The mart the product question is asked of.
+grain: [member_id, card_id, month]
+
+columns:
+  - {name: member_id, type: string, nullable: false, pii: true, description: "Cardholder identifier"}
+  - {name: card_id, type: string, nullable: false, description: "Natural key of the card product"}
+  - {name: product_name, type: string, description: "Card product name as of the transactions in scope"}
+  - {name: issuer, type: string, description: "Issuing bank"}
+  - {name: month, type: string, nullable: false, description: "Calendar month, yyyy-MM"}
+  - {name: txn_count, type: bigint, description: "Settled transactions in the month"}
+  - {name: merchant_count, type: bigint, description: "Distinct merchants transacted with"}
+  - {name: spend_usd, type: double, description: "Settled spend in USD, refunds excluded"}
+  - {name: refund_usd, type: double, description: "Refunds in USD, always negative or zero"}
+  - {name: net_spend_usd, type: double, description: "spend_usd + refund_usd"}
+  - {name: bonus_category_spend_usd, type: double, description: "Spend that matched a bonus earn rule"}
+  - {name: points_earned, type: double, description: "Points earned, base plus bonus uplift"}
+  - {name: reward_value_usd, type: double, description: "Points valued at the card's point_value_cents"}
+  - {name: annual_fee_usd, type: double, description: "Annual fee of the current card version"}
+  - {name: monthly_fee_usd, type: double, description: "annual_fee_usd amortised over twelve months"}
+  - {name: net_value_usd, type: double, description: "reward_value_usd - monthly_fee_usd"}
+  - {name: roi_ratio, type: double, description: "Rewards per dollar of fee; null for no-fee cards"}
+  - {name: effective_return_pct, type: double, description: "Reward value as a percentage of spend"}
+  - {name: bonus_spend_share_pct, type: double, description: "Share of spend in bonus categories"}
+  - {name: fee_verdict, type: string, accepted_values: [keep, review], description: "Whether the fee paid for itself"}
+  - {name: month_value_rank, type: int, description: "Rank by net value within the month"}

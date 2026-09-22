@@ -1,0 +1,36 @@
+# Declarative data-quality contract. Evaluated by rewards_pipeline.quality
+# after each layer is written; results land in warehouse/_quality/.
+
+bronze.transactions:
+  - {type: row_count_min, value: 1, severity: fail}
+  # Corrupt rows have no parsed columns at all; they are covered by
+  # corrupt_ratio_max below, so key checks are scoped to parseable rows.
+  - {type: not_null, column: txn_id, where: "_corrupt_record IS NULL", severity: fail}
+  - {type: not_null, column: _ingested_at, severity: fail}
+  - {type: corrupt_ratio_max, value: 0.02, severity: warn}
+
+silver.transactions:
+  - {type: unique, column: txn_id, severity: fail}
+  - {type: not_null, column: member_id, severity: fail}
+  - {type: not_null, column: card_id, severity: fail}
+  - {type: not_null, column: amount_usd, severity: fail}
+  - {type: accepted_values, column: status, values: [settled, refunded], severity: fail}
+  - {type: range, column: amount_usd, min: -25000, max: 25000, severity: fail}
+  - {type: freshness_days_max, column: txn_ts, value: 45, severity: warn}
+
+silver.cards:
+  - {type: unique, column: card_sk, severity: fail}
+  - {type: not_null, column: valid_from, severity: fail}
+  # Exactly one current row per natural key is the whole point of the SCD2 build.
+  - {type: unique, column: card_id, where: "is_current", severity: fail}
+
+gold.transaction_rewards:
+  - {type: unique, column: txn_id, severity: fail}
+  - {type: not_null, column: points_earned, severity: fail}
+  - {type: range, column: points_earned, min: 0, max: 1000000, severity: fail}
+  - {type: referential_integrity, column: card_id, ref_table: silver.cards, ref_column: card_id, severity: fail}
+
+gold.card_roi_monthly:
+  - {type: row_count_min, value: 1, severity: fail}
+  - {type: not_null, column: net_value_usd, severity: fail}
+  - {type: unique_composite, columns: [member_id, card_id, month], severity: fail}

@@ -1,0 +1,31 @@
+# UAT overlay, selected with RP_ENV=uat. Deep-merged over pipeline.yaml, so
+# this file states only what differs from the base configuration.
+#
+# UAT mirrors production's shape on a fraction of the data: same code, same
+# transformations, same quality contract, smaller cluster and a separate
+# bucket. Environments are configuration, not branches.
+
+paths:
+  landing: s3a://rewards-uat/landing
+  warehouse: s3a://rewards-uat/warehouse
+  # Quality reports and run manifests stay on local disk for the CI runner
+  # to collect as build artifacts.
+  reports: data/reports
+
+spark:
+  shuffle_partitions: 64
+  configs:
+    spark.sql.session.timeZone: UTC
+    spark.sql.sources.partitionOverwriteMode: dynamic
+    spark.sql.adaptive.enabled: "true"
+    spark.sql.adaptive.coalescePartitions.enabled: "true"
+    spark.sql.parquet.compression.codec: snappy
+
+quality:
+  # UAT is where a contract breach should be loud, before prod ever sees it.
+  on_breach_default: fail
+  quarantine_path: _quarantine
+
+catalog:
+  enabled: true
+  database: rewards_uat
