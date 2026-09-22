@@ -66,8 +66,9 @@ def split_statements(sql: str) -> list[str]:
     Splitting naively on ";" is wrong the moment a COMMENT contains one -
     `COMMENT 'SCD2 dimension; filter is_current'` would be torn into two
     invalid fragments. This walks the text tracking whether it is inside a
-    single-quoted literal (with '' escapes), and drops -- line comments only
-    when they are not inside one.
+    single-quoted literal - honouring both Spark's backslash escape and a
+    hand-written ANSI '' - and drops -- line comments only when they are not
+    inside one.
     """
     statements: list[str] = []
     buffer: list[str] = []
@@ -79,8 +80,12 @@ def split_statements(sql: str) -> list[str]:
 
         if in_string:
             buffer.append(char)
+            if char == "\\":  # Spark's escape: the next character is literal
+                buffer.append(sql[index + 1 : index + 2])
+                index += 2
+                continue
             if char == "'":
-                if sql[index + 1 : index + 2] == "'":  # escaped quote
+                if sql[index + 1 : index + 2] == "'":  # ANSI-style, if hand-written
                     buffer.append("'")
                     index += 2
                     continue

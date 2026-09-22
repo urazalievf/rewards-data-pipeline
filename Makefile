@@ -67,6 +67,15 @@ run: ## seed + bronze + silver + gold, end to end
 backfill: ## seed + ingest DAYS of history (default 14) + rebuild silver and gold
 	$(BIN)/rewards backfill --days $(DAYS) --seed
 
+schema: ## list the declared table contracts
+	$(BIN)/rewards schema list
+
+schema-check: ## fail if a table drifted from its declared contract
+	$(BIN)/rewards schema check
+
+schema-render: ## generate CREATE TABLE DDL from the contracts
+	$(BIN)/rewards schema render
+
 migrate: ## apply pending DDL migrations from ddl/ to the catalog
 	$(BIN)/rewards migrate
 
@@ -141,7 +150,8 @@ clean: ## remove generated data and caches
 	rm -rf .pytest_cache .ruff_cache .mypy_cache
 	@touch data/landing/.gitkeep data/warehouse/.gitkeep
 
-.PHONY: help venv doctor seed bronze silver gold run backfill migrate migrate-dry-run \
+.PHONY: help venv doctor seed bronze silver gold run backfill schema schema-check \
+	schema-render migrate migrate-dry-run \
 	preview quality test test-fast \
 	lint format docker-build docker-run docker-backfill docker-migrate docker-preview \
 	docker-test docker-shell \

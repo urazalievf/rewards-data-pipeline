@@ -64,6 +64,12 @@ so a malformed row is captured rather than dropped.
 `.sql` file an analyst can open. Python handles configuration, ordering,
 persistence and the quality gate — the parts SQL is bad at.
 
+**Contracts are declared, and checked against reality.** `schemas/*.yml` states
+what each table promises; `rewards schema check` compares that against the
+schema the pipeline actually produced and fails CI on drift. This is the only
+thing that makes the contract binding, because with Parquet the catalog cannot
+reject a write that contradicts it.
+
 **Table definitions are deployed, not implied.** `ddl/` holds numbered
 migrations applied by `rewards migrate`, with a checksummed ledger in the
 warehouse. Without this the schema is a side effect of the last write, and a

@@ -1,0 +1,24 @@
+table: cards
+layer: silver
+owner: data-engineering
+description: >-
+  Slowly changing dimension (type 2) over daily card snapshots. Filter
+  is_current for the live view, or join on valid_from/valid_to to see the card
+  as it was on a given date.
+grain: [card_sk]
+
+columns:
+  - {name: card_sk, type: string, nullable: false, description: "Surrogate key, md5(card_id, valid_from)"}
+  - {name: card_id, type: string, nullable: false, description: "Natural key"}
+  - {name: product_name, type: string}
+  - {name: issuer, type: string}
+  - {name: network, type: string}
+  - {name: annual_fee_usd, type: double}
+  - {name: base_earn_rate, type: double, description: "Points per USD before any bonus rule"}
+  - {name: point_value_cents, type: double, description: "Assumed redemption value of one point"}
+  - {name: version_no, type: bigint, description: "1-based version of this card"}
+  - {name: attr_hash, type: string, description: "Hash of tracked attributes; a change opens a version"}
+  - {name: valid_from, type: date, nullable: false}
+  - {name: valid_to, type: date, nullable: false, description: "9999-12-31 while current"}
+  - {name: is_current, type: boolean, nullable: false, description: "Exactly one true row per card_id"}
+  - {name: last_seen_date, type: date, description: "Most recent snapshot carrying this version"}

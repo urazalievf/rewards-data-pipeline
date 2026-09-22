@@ -30,6 +30,14 @@ def test_split_keeps_double_quote_escapes():
     assert split_statements(sql) == ["CREATE TABLE a (x INT) COMMENT 'it''s fine'"]
 
 
+def test_split_honours_spark_backslash_escapes():
+    """Generated DDL uses \\' because Spark does not honour doubled quotes."""
+    sql = r"CREATE TABLE a (x INT) COMMENT 'month\'s spend; really'; CREATE TABLE b (y INT)"
+    statements = split_statements(sql)
+    assert len(statements) == 2
+    assert r"month\'s spend; really" in statements[0]
+
+
 def test_split_ignores_trailing_semicolon():
     assert len(split_statements("SELECT 1; SELECT 2;")) == 2
 

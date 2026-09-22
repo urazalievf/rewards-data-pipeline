@@ -62,7 +62,8 @@ make backfill          # or: make backfill DAYS=30
 | **Idempotency** | Dynamic partition overwrite; re-running a date reproduces the same output |
 | **Orchestration** | Airflow DAG with TaskGroups, retries with exponential backoff, backfill support |
 | **Testing** | 38 tests covering the quality engine, the SQL transforms and the seed data |
-| **Schema management** | Versioned DDL migrations with a checksummed, warehouse-side ledger |
+| **Data contracts** | YAML per table; CI fails when the pipeline drifts from what was declared |
+| **Schema management** | Generated, versioned DDL migrations with a checksummed, warehouse-side ledger |
 | **CI** | Lint, type-check, unit tests, a full end-to-end run and a migration idempotency gate |
 
 ---
@@ -167,6 +168,48 @@ joining never goes through `pathlib`, which would silently collapse `s3a://`
 into `s3a:/`, and existence checks go through Hadoop's `FileSystem` API so
 they answer correctly for local disk and object storage alike.
 
+## Tables are declared, then enforced
+
+Each warehouse table has a contract in `schemas/` — the source of truth for
+its columns, types, grain, ownership and PII:
+
+```yaml
+# schemas/gold/card_roi_monthly.yml
+table: card_roi_monthly
+layer: gold
+owner: data-engineering
+grain: [member_id, card_id, month]
+columns:
+  - {name: member_id, type: string, nullable: false, pii: true}
+  - {name: net_value_usd, type: double, description: "reward_value_usd - monthly_fee_usd"}
+  - {name: fee_verdict, type: string, accepted_values: [keep, review]}
+```
+
+Two things derive from it:
+
+```bash
+make schema-check    # does the table the pipeline wrote match the contract?
+make schema-render   # generate the CREATE TABLE, rather than hand-typing it
+```
+
+`schema check` is the important one. Writing Parquet with `mode("overwrite")`
+means the schema is whatever the last write produced — rename a column and
+nothing fails, it simply disappears from under the consumers. The check
+compares the contract against the schema actually on disk and fails CI:
+
+```
+[DRIFT] gold.card_roi_monthly  missing ['gross_spend_usd']; undeclared ['spend_usd'];
+                               type month_value_rank: declared bigint, actual int
+```
+
+Grain, owner and PII columns are carried into `TBLPROPERTIES`, so the catalog
+answers "who owns this and what is sensitive" without opening the repo.
+
+> Nullability is deliberately *not* checked against Parquet metadata, which
+> reports nearly everything as nullable regardless of content. `nullable:
+> false` reaches the DDL, and is tested against the data as a `not_null`
+> expectation instead.
+
 ## Schema is deployed, not implied
 
 Writing Parquet with `mode("overwrite")` means the schema is whatever the last
@@ -179,6 +222,10 @@ ddl/
   V001__create_gold_marts.sql          CREATE DATABASE + the four marts
   V002__expose_silver_to_analysts.sql  the SCD2 dimension and silver facts
 ```
+
+Both files are **generated** from the contracts by `rewards schema render` and
+committed — DDL is not hand-typed. They are immutable once applied, so a
+contract change means rendering a *new* migration, not editing V001.
 
 ```bash
 make migrate-dry-run   # what is pending
@@ -232,6 +279,7 @@ make airflow-up    # http://localhost:8080  (admin / admin)
 conf/           pipeline.yaml + per-environment overlays, and expectations.yaml (the DQ contract)
 dags/           Airflow DAG
 ddl/            Versioned CREATE/ALTER TABLE migrations, applied by `rewards migrate`
+schemas/        Declared table contracts: columns, types, grain, owner, PII
 scripts/        find-jdk.sh, used by the Makefile to locate a Spark-compatible JDK
 docker/         Pinned JDK 17 images for the pipeline and for Airflow
 src/rewards_pipeline/

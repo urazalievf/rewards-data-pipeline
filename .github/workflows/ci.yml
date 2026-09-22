@@ -111,6 +111,11 @@ jobs:
       - name: Seed, run every layer and check the quality gate
         run: rewards run-all --seed
 
+      - name: Check the tables match their declared contracts
+        # Fails if the pipeline wrote a column the contract does not declare,
+        # or renamed one. This is what the catalog cannot enforce for Parquet.
+        run: rewards schema check
+
       - name: Apply DDL migrations and check they are idempotent
         run: |
           rewards migrate

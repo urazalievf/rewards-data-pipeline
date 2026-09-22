@@ -80,6 +80,9 @@ jobs:
       - name: Gate on the test suite
         run: pytest -q
 
+      - name: List declared table contracts
+        run: rewards schema list
+
       - name: Show pending schema migrations
         # Always visible in the log, so an approver reviewing a prod promotion
         # can see exactly which DDL is about to be applied.
@@ -114,6 +117,8 @@ jobs:
           # External tables do not learn about partitions written after the
           # table was created.
           rewards migrate --repair-only
+          # Last gate: what landed must match what was declared.
+          rewards schema check
 
       - name: Upload data-quality reports
         if: always()

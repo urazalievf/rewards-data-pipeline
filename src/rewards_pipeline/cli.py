@@ -71,6 +71,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("config", help="print the resolved configuration for RP_ENV (no Spark needed)")
 
+    schema_parser = sub.add_parser(
+        "schema", help="work with the declared table contracts in schemas/"
+    )
+    schema_parser.add_argument(
+        "action",
+        choices=["check", "render", "list"],
+        help="check drift against what the pipeline wrote, render DDL, or list contracts",
+    )
+    schema_parser.add_argument("--table", help="limit to one <layer>.<table>")
+    schema_parser.add_argument(
+        "--resolved",
+        action="store_true",
+        help="render with placeholders substituted (for reading, not for committing)",
+    )
+
     migrate_parser = sub.add_parser(
         "migrate", help="apply pending DDL migrations from ddl/ to the catalog"
     )
@@ -122,6 +137,42 @@ def main(argv: list[str] | None = None) -> int:
                     default=str,
                 )
             )
+            return 0
+
+        if args.command == "schema":
+            from . import contracts
+
+            declared = contracts.load_all()
+            if args.table:
+                declared = [c for c in declared if c.qualified == args.table]
+                if not declared:
+                    log.error("no contract declared for %s", args.table)
+                    return 4
+
+            if args.action == "list":
+                for contract in declared:
+                    pii = [c.name for c in contract.columns if c.pii]
+                    print(
+                        f"{contract.qualified:<28} {len(contract.columns):>3} cols  "
+                        f"grain={','.join(contract.grain) or '-':<28} "
+                        f"owner={contract.owner}" + (f"  pii={','.join(pii)}" if pii else "")
+                    )
+                return 0
+
+            if args.action == "render":
+                for contract in declared:
+                    print(contracts.render_ddl(contract, config, resolved=args.resolved) + ";\n")
+                return 0
+
+            # check
+            with spark_session(config, "schema-check") as spark:
+                drifts = contracts.check(spark, config)
+            for drift in drifts:
+                print(drift.render())
+            drifted = [d for d in drifts if d.checked and not d.clean]
+            if drifted:
+                log.error("%d table(s) drifted from their contract", len(drifted))
+                return 5
             return 0
 
         if args.command == "migrate":

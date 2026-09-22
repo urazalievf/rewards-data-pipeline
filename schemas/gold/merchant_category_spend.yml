@@ -1,0 +1,19 @@
+table: merchant_category_spend
+layer: gold
+owner: data-engineering
+description: Category spend and effective return by month, with each category's share of the month.
+grain: [month, category]
+
+columns:
+  - {name: month, type: string, nullable: false, description: "Calendar month, yyyy-MM"}
+  - {name: category, type: string, nullable: false}
+  - {name: txn_count, type: bigint}
+  - {name: member_count, type: bigint, description: "Distinct members transacting in the category"}
+  - {name: merchant_count, type: bigint}
+  - {name: spend_usd, type: double}
+  - {name: avg_ticket_usd, type: double}
+  - {name: points_earned, type: double}
+  - {name: reward_value_usd, type: double}
+  - {name: effective_return_pct, type: double}
+  - {name: pct_of_month_spend, type: double, description: "Share of the month's total spend"}
+  - {name: spend_rank, type: int, description: "Rank by spend within the month"}

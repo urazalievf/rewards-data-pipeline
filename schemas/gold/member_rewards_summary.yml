@@ -1,0 +1,23 @@
+table: member_rewards_summary
+layer: gold
+owner: data-engineering
+description: One row per member - lifetime spend, rewards, top category, best card and value tier.
+grain: [member_id]
+
+columns:
+  - {name: member_id, type: string, nullable: false, pii: true}
+  - {name: txn_count, type: bigint}
+  - {name: card_count, type: bigint, description: "Distinct cards the member transacted on"}
+  - {name: active_months, type: bigint}
+  - {name: lifetime_spend_usd, type: double}
+  - {name: lifetime_points, type: double}
+  - {name: lifetime_reward_usd, type: double}
+  - {name: first_txn_date, type: date}
+  - {name: last_txn_date, type: date}
+  - {name: effective_return_pct, type: double}
+  - {name: top_category, type: string}
+  - {name: top_category_spend_usd, type: double}
+  - {name: best_card_id, type: string}
+  - {name: best_card_product, type: string}
+  - {name: best_card_net_value_usd, type: double}
+  - {name: value_tier, type: string, accepted_values: [bronze, silver, gold, platinum]}

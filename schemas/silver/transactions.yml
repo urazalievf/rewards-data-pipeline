@@ -1,0 +1,28 @@
+table: transactions
+layer: silver
+owner: data-engineering
+description: >-
+  Deduplicated, USD-normalised transactions. Refunds carry a negative
+  amount_usd so any SUM() nets out correctly without a CASE.
+grain: [txn_id]
+partitioned_by: [ingest_date]
+
+columns:
+  - {name: txn_id, type: string, nullable: false}
+  - {name: member_id, type: string, nullable: false, pii: true}
+  - {name: card_id, type: string, nullable: false}
+  - {name: merchant_id, type: string}
+  - {name: mcc, type: string, description: "Four-digit merchant category code, zero padded"}
+  - {name: amount, type: double, description: "Amount in the original currency"}
+  - {name: currency, type: string, description: "ISO currency code, uppercased"}
+  - {name: usd_rate, type: double, description: "FX rate used, as published for the transaction date"}
+  - {name: amount_usd, type: double, description: "Signed USD amount; negative for refunds"}
+  - {name: txn_ts, type: timestamp}
+  - {name: txn_date, type: date}
+  - {name: status, type: string, accepted_values: [settled, refunded]}
+  - {name: is_refund, type: boolean}
+  - {name: channel, type: string}
+  - {name: source_system, type: string, description: "Which upstream system delivered the row"}
+  - {name: _batch_id, type: string, description: "Lineage - ingest batch that produced this row"}
+  - {name: _ingested_at, type: timestamp, description: "Lineage - when bronze received it"}
+  - {name: ingest_date, type: date, nullable: false, description: "Partition column"}
