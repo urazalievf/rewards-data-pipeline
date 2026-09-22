@@ -1,11 +1,14 @@
 # Single source of truth for paths, run parameters and layer layout.
-# Everything is overridable with RP_* environment variables (see config.py).
+# Overlaid by conf/pipeline.<RP_ENV>.yaml, then by RP_* environment
+# variables (see config.py). Environments are configuration, not branches.
 
 app_name: rewards-data-pipeline
 
 paths:
   landing: data/landing
   warehouse: data/warehouse
+  # `reports` (quality reports, run manifests) defaults to the warehouse when
+  # that is local, and must be set explicitly when it is not.
 
 spark:
   shuffle_partitions: 8

@@ -1,0 +1,107 @@
+# Promotion to an environment.
+#
+# Environments here are CONFIGURATION, not branches: the same commit on main is
+# promoted to uat and then prod by selecting a different conf/pipeline.<env>.yaml
+# overlay. There is no long-lived `uat` or `prod` branch to drift.
+#
+# TRIGGERS ARE OFF ON PURPOSE - this workflow only ever runs when a human
+# starts it from the Actions tab. `prod` additionally sits behind a required
+# reviewer on the GitHub Environment, so selecting it pauses for approval
+# before a single step executes.
+name: deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        type: choice
+        options: [uat, prod]
+        default: uat
+        required: true
+      ref:
+        description: "Tag or SHA to promote (defaults to the selected branch)"
+        type: string
+        required: false
+      run_pipeline:
+        description: "Submit the pipeline, not just validate the configuration"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  # One promotion per environment at a time; a queued run waits rather than
+  # racing another deploy for the same warehouse.
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: promote to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment }}
+    env:
+      RP_ENV: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          pip install -e .
+
+      - name: Record what is being promoted
+        run: |
+          echo "environment : ${{ inputs.environment }}"
+          echo "ref         : ${{ inputs.ref || github.ref }}"
+          echo "sha         : $(git rev-parse HEAD)"
+
+      - name: Resolve environment configuration
+        # Spark-free. Proves the overlay merges and every location resolves
+        # before anything is submitted.
+        run: rewards config
+
+      - name: Gate on the test suite
+        run: pytest -q
+
+      - name: Submit the pipeline
+        # The integration point with real infrastructure. Credentials come from
+        # the GitHub Environment's secrets, so uat and prod cannot borrow each
+        # other's. Skipped until the environment has them configured.
+        if: ${{ inputs.run_pipeline }}
+        env:
+          SPARK_MASTER_URL: ${{ vars.SPARK_MASTER_URL }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          if [ -z "$SPARK_MASTER_URL" ]; then
+            echo "::warning::SPARK_MASTER_URL is not set for the '${{ inputs.environment }}'"
+            echo "::warning::environment, so there is no cluster to submit to. Set it in"
+            echo "::warning::Settings > Environments to enable real promotion."
+            exit 0
+          fi
+          rewards run-all
+
+      - name: Upload data-quality reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-${{ inputs.environment }}
+          path: data/reports/
+          if-no-files-found: ignore

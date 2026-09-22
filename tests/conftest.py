@@ -8,6 +8,7 @@ touches the real landing zone.
 from __future__ import annotations
 
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -39,19 +40,13 @@ def spark():
 
 @pytest.fixture
 def config(tmp_path):
-    """A config pointed at a throwaway warehouse."""
-    base = load_config()
-    return type(base)(
-        app_name=base.app_name,
-        landing=tmp_path / "landing",
-        warehouse=tmp_path / "warehouse",
-        spark=base.spark,
-        seed=base.seed,
-        sources=base.sources,
-        layers=base.layers,
-        quality=base.quality,
+    """A config pointed at a throwaway landing zone and warehouse."""
+    return replace(
+        load_config(),
+        landing=str(tmp_path / "landing"),
+        warehouse=str(tmp_path / "warehouse"),
+        reports=tmp_path / "reports",
         env="test",
-        raw=base.raw,
     )
 
 

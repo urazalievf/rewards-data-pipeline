@@ -5,13 +5,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from rewards_pipeline.config import load_config, load_expectations
 from rewards_pipeline.jobs.generate_seed import generate
 
 
 def test_config_paths_resolve_to_absolute(config):
     assert Path(config.landing).is_absolute()
-    assert config.layer_path("gold", "card_roi_monthly").name == "card_roi_monthly"
+    assert config.layer_path("gold", "card_roi_monthly").endswith("/gold/card_roi_monthly")
 
 
 def test_expectations_cover_every_gold_table():
@@ -22,12 +24,44 @@ def test_expectations_cover_every_gold_table():
     assert "transaction_rewards" in declared
 
 
+def test_uri_locations_survive_config_loading(monkeypatch):
+    """pathlib would collapse s3a:// into s3a:/ - locations must stay strings."""
+    monkeypatch.setenv("RP_WAREHOUSE_PATH", "s3a://bucket/warehouse")
+    monkeypatch.setenv("RP_LANDING_PATH", "s3a://bucket/landing")
+    monkeypatch.setenv("RP_REPORTS_PATH", "/tmp/reports")
+    config = load_config()
+    assert config.warehouse == "s3a://bucket/warehouse"
+    assert config.layer_path("silver", "transactions") == (
+        "s3a://bucket/warehouse/silver/transactions"
+    )
+    assert config.landing_path("transactions") == "s3a://bucket/landing/transactions"
+
+
+def test_remote_landing_cannot_be_seeded(monkeypatch):
+    monkeypatch.setenv("RP_LANDING_PATH", "s3a://bucket/landing")
+    monkeypatch.setenv("RP_REPORTS_PATH", "/tmp/reports")
+    with pytest.raises(ValueError, match="only supports a local filesystem"):
+        load_config().landing_dir()
+
+
+def test_environment_overlay_is_deep_merged(monkeypatch):
+    """The prod overlay must change what it states and inherit the rest."""
+    monkeypatch.setenv("RP_ENV", "prod")
+    prod = load_config()
+    assert prod.env == "prod"
+    assert prod.warehouse.startswith("s3a://")
+    assert prod.spark["shuffle_partitions"] == 400
+    # Untouched by the overlay, so it comes from the base file.
+    assert prod.sources["transactions"]["format"] == "json"
+    assert prod.layers["gold"]["tables"], "layer definitions must be inherited"
+
+
 def test_seed_is_deterministic(config, tmp_path):
     config.seed.update({"days": 2, "transactions_per_day": 50, "members": 5, "cards": 3})
     generate(config)
-    first = sorted(p.read_text() for p in config.landing.rglob("*.json"))
+    first = sorted(p.read_text() for p in config.landing_dir().rglob("*.json"))
     generate(config)
-    second = sorted(p.read_text() for p in config.landing.rglob("*.json"))
+    second = sorted(p.read_text() for p in config.landing_dir().rglob("*.json"))
     assert first == second
 
 

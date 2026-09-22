@@ -135,6 +135,37 @@ Quarantined rows keep their rejection reason under
 
 ---
 
+## Environments
+
+Environments are **configuration, not branches**. There is one long-lived
+branch (`main`); `uat` and `prod` are config overlays selected by `RP_ENV`,
+deep-merged over `conf/pipeline.yaml` so each file states only what differs:
+
+```bash
+RP_ENV=prod rewards config     # resolve and print, without starting Spark
+```
+
+```
+local  warehouse=data/warehouse                shuffle=8    quality=fail
+uat    warehouse=s3a://rewards-uat/warehouse   shuffle=64   quality=fail
+prod   warehouse=s3a://rewards-prod/warehouse  shuffle=400  quality=fail
+```
+
+The same commit is promoted from uat to prod by the
+[`deploy`](.github/workflows/deploy.yml) workflow, which selects the overlay
+and pulls per-environment credentials from GitHub Environment secrets — so uat
+and prod cannot borrow each other's. `prod` sits behind a required reviewer,
+so choosing it pauses for approval before any step runs.
+
+This is deliberate: long-lived `uat`/`prod` branches drift, turn promotion into
+cherry-picking, and make "what is running in prod" a branch tip rather than a
+tagged artifact.
+
+Data locations may be local paths or URIs (`s3a://`, `hdfs://`). Location
+joining never goes through `pathlib`, which would silently collapse `s3a://`
+into `s3a:/`, and existence checks go through Hadoop's `FileSystem` API so
+they answer correctly for local disk and object storage alike.
+
 ## Orchestration
 
 The Airflow DAG ([`dags/rewards_medallion.py`](dags/rewards_medallion.py)) runs
@@ -156,7 +187,7 @@ make airflow-up    # http://localhost:8080  (admin / admin)
 ## Layout
 
 ```
-conf/           pipeline.yaml (paths, run params) and expectations.yaml (the DQ contract)
+conf/           pipeline.yaml + per-environment overlays, and expectations.yaml (the DQ contract)
 dags/           Airflow DAG
 scripts/        find-jdk.sh, used by the Makefile to locate a Spark-compatible JDK
 docker/         Pinned JDK 17 images for the pipeline and for Airflow
@@ -182,6 +213,7 @@ make silver DATE=2026-09-22
 make gold   DATE=2026-09-22
 make backfill DAYS=30  # ingest a range, then rebuild silver and gold once
 make quality     # print the latest data-quality report
+RP_ENV=uat .venv/bin/rewards config   # resolved config for an environment
 make test        # full suite
 make test-fast   # skip the JVM-backed tests
 make lint        # ruff + mypy
@@ -196,7 +228,9 @@ submits there instead:
 
 ```bash
 export SPARK_MASTER_URL=spark://spark-master:7077
+export RP_ENV=prod                    # or set the locations explicitly:
 export RP_LANDING_PATH=s3a://your-bucket/landing
 export RP_WAREHOUSE_PATH=s3a://your-bucket/warehouse
+export RP_REPORTS_PATH=/var/log/rewards-pipeline
 .venv/bin/rewards run-all
 ```

@@ -46,7 +46,7 @@ def read_landing(
     base = config.landing_path(source)
 
     if spec.get("partition_by_ingest_date") and logical_date:
-        path = base / f"ingest_date={logical_date}"
+        path = config.join(base, f"ingest_date={logical_date}")
     else:
         path = base
 
@@ -61,7 +61,7 @@ def read_landing(
         reader = reader.option("multiLine", "false")
 
     log.info("reading %s source=%s path=%s", fmt, source, path)
-    return reader.format(fmt).load(str(path))
+    return reader.format(fmt).load(path)
 
 
 # --------------------------------------------------------------------------
@@ -74,25 +74,38 @@ def write_table(
     table: str,
     mode: str = "overwrite",
     partition_by: list[str] | None = None,
-) -> Path:
-    """Write a layer table as Parquet and return its path."""
+) -> str:
+    """Write a layer table as Parquet and return its location."""
     path = config.layer_path(layer, table)
     writer = df.write.mode(mode).format("parquet")
     if partition_by:
         writer = writer.partitionBy(*partition_by)
-    writer.save(str(path))
+    writer.save(path)
     log.info("wrote %s.%s -> %s", layer, table, path)
     return path
 
 
 def read_table(spark: SparkSession, config: Config, layer: str, table: str) -> DataFrame:
-    path = config.layer_path(layer, table)
-    return spark.read.parquet(str(path))
+    return spark.read.parquet(config.layer_path(layer, table))
 
 
-def table_exists(config: Config, layer: str, table: str) -> bool:
-    path = config.layer_path(layer, table)
-    return path.exists() and any(path.iterdir())
+def location_exists(spark: SparkSession, location: str) -> bool:
+    """Check a location through Hadoop's FileSystem API.
+
+    Going through Hadoop rather than pathlib means this answers correctly for
+    a local directory, HDFS and object storage alike, using whatever
+    filesystem implementation Spark is already configured with.
+    """
+    jvm = spark._jvm
+    if jvm is None:  # pragma: no cover - only when the JVM is not running
+        raise RuntimeError("no active JVM; the SparkSession has been stopped")
+    hadoop_path = jvm.org.apache.hadoop.fs.Path(location)
+    filesystem = hadoop_path.getFileSystem(spark._jsc.hadoopConfiguration())
+    return bool(filesystem.exists(hadoop_path))
+
+
+def table_exists(spark: SparkSession, config: Config, layer: str, table: str) -> bool:
+    return location_exists(spark, config.layer_path(layer, table))
 
 
 def register_views(
@@ -105,7 +118,7 @@ def register_views(
     """
     registered = []
     for table in tables or config.tables(layer):
-        if not table_exists(config, layer, table):
+        if not table_exists(spark, config, layer, table):
             continue
         view = f"{layer}_{table}"
         read_table(spark, config, layer, table).createOrReplaceTempView(view)
@@ -149,7 +162,7 @@ def make_batch_id(logical_date: str) -> str:
 
 def write_run_manifest(config: Config, payload: dict[str, Any]) -> Path:
     """Append a JSON line describing the run — the pipeline's own audit log."""
-    directory = config.warehouse / "_runs"
+    directory = config.run_manifest_path()
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{payload.get('logical_date', 'unknown')}.jsonl"
     payload = {"recorded_at": datetime.now(timezone.utc).isoformat(), **payload}

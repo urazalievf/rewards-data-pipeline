@@ -1,0 +1,24 @@
+# Production overlay, selected with RP_ENV=prod. Deep-merged over
+# pipeline.yaml; only the differences live here.
+
+paths:
+  landing: s3a://rewards-prod/landing
+  warehouse: s3a://rewards-prod/warehouse
+  reports: /var/log/rewards-pipeline
+
+spark:
+  shuffle_partitions: 400
+  configs:
+    spark.sql.session.timeZone: UTC
+    spark.sql.sources.partitionOverwriteMode: dynamic
+    spark.sql.adaptive.enabled: "true"
+    spark.sql.adaptive.coalescePartitions.enabled: "true"
+    spark.sql.adaptive.skewJoin.enabled: "true"
+    spark.sql.parquet.compression.codec: snappy
+    spark.sql.files.maxPartitionBytes: 268435456
+    # Fail a job rather than silently writing a corrupt partition.
+    spark.sql.parquet.outputTimestampType: TIMESTAMP_MICROS
+
+quality:
+  on_breach_default: fail
+  quarantine_path: _quarantine

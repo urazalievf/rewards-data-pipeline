@@ -61,7 +61,7 @@ def generate(config: Config | None = None, *, clean: bool = True) -> Path:
     config = config or load_config()
     seed_cfg = config.seed
     rng = random.Random(seed_cfg.get("random_seed", 42))
-    landing = config.landing
+    landing = config.landing_dir()
 
     if clean and landing.exists():
         shutil.rmtree(landing)

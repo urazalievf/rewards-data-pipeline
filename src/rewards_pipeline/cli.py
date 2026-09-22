@@ -35,7 +35,7 @@ def _preview(config, limit: int) -> None:
 
     with spark_session(config, "preview") as spark:
         for table in config.tables("gold"):
-            if not table_exists(config, "gold", table):
+            if not table_exists(spark, config, "gold", table):
                 log.warning("gold.%s has not been built yet", table)
                 continue
             print(f"\n=== gold.{table} ===")
@@ -68,6 +68,8 @@ def build_parser() -> argparse.ArgumentParser:
     backfill_parser.add_argument("--end", default=None, help="last date, YYYY-MM-DD")
     backfill_parser.add_argument("--seed", action="store_true")
 
+    sub.add_parser("config", help="print the resolved configuration for RP_ENV (no Spark needed)")
+
     preview_parser = sub.add_parser("preview", help="print the gold marts")
     preview_parser.add_argument("--limit", type=int, default=10)
 
@@ -83,6 +85,32 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "seed":
             generate_seed.generate(config)
+            return 0
+
+        if args.command == "config":
+            # Deliberately Spark-free: this is what a deploy job runs to prove
+            # an environment resolves before it submits anything.
+            print(
+                json.dumps(
+                    {
+                        "env": config.env,
+                        "app_name": config.app_name,
+                        "landing": config.landing,
+                        "warehouse": config.warehouse,
+                        "reports": str(config.reports),
+                        "shuffle_partitions": config.spark.get("shuffle_partitions"),
+                        "quality_on_breach": config.quality.get("on_breach_default"),
+                        "layers": {
+                            layer: [
+                                config.layer_path(layer, table) for table in config.tables(layer)
+                            ]
+                            for layer in ("bronze", "silver", "gold")
+                        },
+                    },
+                    indent=2,
+                    default=str,
+                )
+            )
             return 0
 
         if args.command == "preview":

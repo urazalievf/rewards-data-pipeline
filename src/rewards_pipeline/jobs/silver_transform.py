@@ -29,7 +29,7 @@ def _quarantine_rejects(df: DataFrame, config: Config, table: str) -> int:
     count = rejects.count()
     if count:
         path = config.quarantine_path(f"silver_{table}")
-        rejects.write.mode("append").parquet(str(path))
+        rejects.write.mode("append").parquet(path)
         breakdown = rejects.groupBy("_reject_reason").count().orderBy(F.desc("count")).collect()
         log.warning(
             "silver.%s quarantined %d row(s): %s",

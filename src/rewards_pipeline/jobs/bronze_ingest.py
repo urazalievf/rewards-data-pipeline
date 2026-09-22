@@ -67,7 +67,7 @@ def ingest_source(
             path = config.quarantine_path(f"bronze_{source}")
             corrupt.select(CORRUPT_COLUMN, "_batch_id", "_source_file", "_ingested_at").write.mode(
                 "append"
-            ).parquet(str(path))
+            ).parquet(path)
             log.warning("quarantined %d unparseable row(s) from %s", quarantined, source)
 
     write_table(
